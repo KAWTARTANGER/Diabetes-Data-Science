@@ -1,0 +1,494 @@
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+
+```
+---
+title: "<span style='font-size:36px; font-weight:bold; color: #2c3e50;'>Exploratory Analysis - Diabetes Dataset Insights</span>"
+author: "<h4 style='text-align:center;'>Kawtar Zouhair</h4>"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output: 
+  html_document:
+    number_sections: yes
+    toc: yes
+    theme: cosmo
+    highlight: tango
+---
+
+# Load libraries
+
+```{r, warning=FALSE, include=TRUE, echo=TRUE, message=FALSE, results='show'}
+
+
+library(tidyverse)
+library(here)
+library(skimr)
+library(conflicted)
+library(ggplot2)
+library(magrittr)
+library(plyr)
+library(dplyr)
+library(gridExtra)
+library(stringr)
+library(scales)
+```
+
+## Dataset description
+
+[Source](https://www.kaggle.com/datasets/hasibur013/diabetes-dataset)
+
+This dataset is originally adapted from the **National Institute of Diabetes and Digestive and Kidney Diseases (NIDDK)**.
+It contains medical measurements used to predict diabetes onset based on health factors.
+The dataset includes 768 records of female patients, each with 8 health-related attributes.
+
+The **"Outcome"** column indicates if the patient has diabetes (1) or not (0).
+It is suitable for training and testing machine learning models for diabetes classification.
+
+### Dataset Features:
+
+-   **Pregnancies**: Number of pregnancies.
+-   **Glucose**: Plasma glucose levels from a 2-hour glucose tolerance test.
+-   **BloodPressure**: Diastolic blood pressure (mm Hg).
+-   **SkinThickness**: Triceps skinfold thickness (mm).
+-   **Insulin**: 2-hour serum insulin (mu U/ml).
+-   **BMI**: Body mass index (kg/m²).
+-   **DiabetesPedigreeFunction**: Diabetes risk based on family history.
+-   **Age**: Patient’s age (years).
+-   **Outcome**: 1 for diabetes, 0 for no diabetes.
+
+# Load Data
+
+```{r}
+diabetes_raw=read.csv("C:/Users/kawta/Desktop/Module/Data Science/Diabetes/subfolder/diabetes_dataset.csv")
+
+```
+
+# Cleaning and Prepping the Data
+
+```{r}
+# Load necessary libraries
+library(dplyr)
+
+# Assign the raw data to a new variable
+diabetes <- diabetes_raw
+
+# Outcome is a categorical variable with values 0 or 1, convert it to a factor
+diabetes$Outcome <- factor(diabetes$Outcome)
+
+# Spell out the Outcome flag (1 = Diabetes, 0 = healthy)
+diabetes$Outcome <- ifelse(diabetes$Outcome == "1", "Diabetes", "healthy")
+
+# Rename the 'Outcome' column to 'target'
+colnames(diabetes)[ncol(diabetes)] <- "target"
+
+# Entfernen der 0-Werte aus der SkinThickness-Spalte
+diabetes$SkinThickness[diabetes$SkinThickness == 0] <- NA
+
+# Create two subsets: diabetes patients and healthy individuals
+diabetes_patients <- subset(diabetes, target == "Diabetes")
+diabetes_healthy <- subset(diabetes, target == "healthy")
+
+# Ensure Insulin is numeric and replace 0 values with NA
+diabetes$Insulin <- as.numeric(diabetes$Insulin)
+diabetes$Insulin[diabetes$Insulin == 0] <- NA
+
+# Cleaning the Blood Pressure Data: Replace 0 values with NA
+diabetes$BloodPressure[diabetes$BloodPressure == 0] <- NA
+
+# Check the number of missing values in the Blood Pressure column
+sum(is.na(diabetes$BloodPressure))
+
+
+#  replacing NA values in BloodPressure with the median (as a simple imputation strategy):
+diabetes$BloodPressure <- ifelse(is.na(diabetes$BloodPressure), 
+                                  median(diabetes$BloodPressure, na.rm = TRUE), 
+                                  diabetes$BloodPressure)
+# Entfernen der 0-Werte aus den Spalten Glucose und BMI
+diabetes$Glucose[diabetes$Glucose == 0] <- NA
+diabetes$BMI[diabetes$BMI == 0] <- NA
+
+# Optional: Überprüfen der Anzahl der fehlenden Werte in Glucose und BMI
+sum(is.na(diabetes$Glucose))
+sum(is.na(diabetes$BMI))
+
+
+```
+
+# Descriptive Statistics
+
+Show first 6 rows.
+
+```{r}
+head(diabetes)
+```
+
+Show structure information about the dataframe.
+
+```{r}
+str(diabetes)
+```
+
+Show summary statistics per column.
+
+```{r}
+summary(diabetes)
+```
+
+# Univariate Plots
+
+In this section , we will visualize the distribution and key characteristics of a single variable.
+These plots help quickly identify patterns, trends, outliers, or any anomalies in the data.
+
+## Pregnancies Distribution by Response
+
+```{r}
+
+ggplot(diabetes, aes(x = factor(target), y = Pregnancies, fill = factor(target))) +
+  geom_boxplot(alpha = 0.7) +
+  scale_fill_manual(values = c("blue", "green"),
+                    labels = c("Healthy", "Diabetes")) +
+  labs(title = "Boxplot of Pregnancies by Target",
+       x = "Target",
+       y = "Number of Pregnancies",
+       fill = "Target") +
+  theme_minimal()
+
+
+pregnancies_pvalue = t.test(diabetes_patients$Pregnancies, diabetes_healthy$Pregnancies)$p.value
+
+```
+
+**Interpretation:**
+
+The median number of pregnancies is higher for individuals with diabetes compared to healthy individuals, as shown by the relative position of the central lines in each box.Outliers in the healthy group suggest that while most have fewer pregnancies, a small number have significantly higher counts.
+The p value `r toString(pregnancies_pvalue)` is close to 0 indicating the results did not occur by chance .
+
+## Glucose distribution
+
+```{r}
+# Improved histogram with additional enhancements using diabetes
+diabetes %>%
+  ggplot(aes(x = Glucose, fill = target)) + 
+  geom_histogram(binwidth = 10, color = "black", alpha = 0.7, position = "identity") +  # Histogram with transparency
+  geom_density(aes(y = ..count..), color = "black", linetype = "dashed", alpha = 0.5) +  # Density overlay
+  facet_wrap(~ target, ncol = 2, labeller = labeller(target = c(Diabetes = "Diabetes", healthy = "Healthy"))) + 
+  theme_minimal(base_size = 14) +  # Cleaner theme
+  theme(
+    strip.text = element_text(face = "bold"),  # Bold facet labels
+    legend.position = "bottom"  # Move legend to the bottom
+  ) +
+  labs(
+    title = "Distribution of Glucose Levels by Target Group",
+    x = "Glucose Level (mg/dL)",
+    y = "Count",
+    fill = "Target Group"
+  ) +
+  scale_x_continuous(limits = c(0, 200), breaks = seq(0, 200, 20)) +  # Set axis limits and breaks
+  scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +  # Avoid excessive y-axis margin
+  scale_fill_manual(values = c("Diabetes" = "#FF9999", "healthy" = "#99CCFF")) +  # Custom colors
+  geom_vline(data = diabetes %>% group_by(target) %>% dplyr::summarize(mean_glucose = mean(Glucose, na.rm = TRUE)),
+             aes(xintercept = mean_glucose, color = target), 
+             linetype = "solid", size = 0.8) +  # Add mean lines
+  scale_color_manual(values = c("Diabetes" = "red", "healthy" = "blue"), guide = "none")  # Mean line colors
+
+
+```
+
+**Interpretation:**
+
+The histogram shows that healthy individuals have glucose levels concentrated between 80–120 mg/dL, with a mean around 100 mg/dL, while individuals with diabetes have higher glucose levels, typically between 120–180 mg/dL, with a mean near 140 mg/dL.
+
+```{r}
+
+
+diabetes %>%
+  ggplot( aes(x = target ,y= Glucose, fill = target)) + 
+    geom_boxplot(alpha = 0.9)+
+    theme(text = element_text(size=16)) +
+    labs ( title = "Frequency Histogram: glucose vs Target" ) +
+          xlab ("Glucose") +
+          ylab ("Glucose level ")
+
+glucose_pvalue = t.test (diabetes_patients$Glucose, diabetes_healthy$Glucose)$p.value
+
+
+
+```
+
+**Interpretation:**
+
+Patients with diabetes tend to have higher glucose levels compared to healthy individuals.
+Outliers in the "healthy" group suggest a few individuals have unusually high glucose levels, potentially indicating other factors at play.The p value `r toString(glucose_pvalue)` very close to 0) indicates the observed difference in glucose levels between the "Diabetes" and "healthy" groups is statistically significant.
+
+## Blood Pressure Distribution by Response
+
+```{r}
+diabetes %>%
+  ggplot(aes(x = BloodPressure, fill = target)) + 
+    geom_histogram(binwidth = 10, color = "black", alpha = 0.7) +  # Increased binwidth for wider bins
+    facet_wrap(~ target, labeller = labeller(target = c(Diabetes = "Diabetes", healthy = "Healthy"))) + 
+    theme_minimal(base_size = 18) +  # Larger base font size for better readability
+    theme(
+      strip.text = element_text(face = "bold", size = 18),  # Bold facet labels with larger size
+      legend.position = "bottom",  # Move legend below
+      legend.text = element_text(size = 16)  # Increase legend text size
+    ) +
+    labs(
+      title = "Distribution of Blood Pressure Levels by Target Group",
+      x = "Blood Pressure (mmHg)",
+      y = "Count",
+      fill = "Target Group"
+    ) +
+    scale_x_continuous(limits = c(0, 200), breaks = seq(0, 200, 20)) +  # Adjust x-axis limits and breaks
+    scale_fill_manual(values = c("Diabetes" = "#FF6666", "healthy" = "#66B2FF"))  # Custom vibrant colors
+
+
+```
+
+**Interpretation:**
+
+Blood pressure values range from approximately 25 mmHg to 120 mmHg, with the majority falling between 50 and 90 mmHg .
+A few individuals have blood pressure values below 50 mmHg or above 100 mmHg .
+
+```{r}
+diabetes %>%
+  ggplot(aes(x = target, y = BloodPressure, fill = target)) + 
+    geom_boxplot(alpha = 0.7, color = "black", outlier.size = 2) +  # Boxplot with borders and visible outliers
+    theme_minimal(base_size = 16) +  # Cleaner theme and larger font size
+    theme(
+      legend.position = "none",  # Remove legend since target is on x-axis
+      strip.text = element_text(face = "bold")  # Bold facet labels
+    ) +
+    labs(
+      title = "Boxplot of Blood Pressure by Target Group",
+      x = "Target Group",
+      y = "Blood Pressure (mmHg)"
+    ) +
+    scale_fill_manual(values = c("Diabetes" = "#FF9999", "healthy" = "#99CCFF"))  # Custom colors
+
+
+bloodpressure_pvalue = t.test(diabetes_patients$BloodPressure, diabetes_healthy$BloodPressure)$p.value
+
+```
+
+**Interpretation:**
+
+It shows that both the Diabetes and Healthy groups have a similar median blood pressure around 80 mmHg, but the Healthy group exhibits a slightly wider range of values. Outliers are present in both groups, indicating variability in blood pressure, with a few individuals having unusually low or high values .
+Since the p value `r toString(bloodpressure_pvalue)` \> 0.05, we fail to reject the null hypothesis at the 5% significance level.
+Conclusion: There is no statistically significant difference between the blood pressure levels of diabetes patients and healthy individuals.
+The observed difference could have occurred by chance.
+
+## Skin Thickness Distribution
+
+```{r}
+
+ggplot(diabetes, aes(x = SkinThickness)) +
+  geom_histogram(binwidth = 5, fill = "blue", color = "black", boundary = 0) +
+  labs(
+    title = "Frequency Histogram: Skin Thickness",
+    x = "Skin Thickness",
+    y = "Count"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    axis.title = element_text(face = "bold")
+  )
+
+```
+
+**Interpretation:**
+
+The most frequent skin thickness values fall between 20 and 35, where the count exceeds 75.
+
+## Skin Thickness Distribution by Response
+
+```{r}
+
+ggplot(diabetes, aes(x = as.factor(target), y = SkinThickness, fill = as.factor(target))) +
+  geom_boxplot(outlier.color = "red", outlier.size = 2) +
+  labs(
+    title = "Box Plot of Skin Thickness",
+    x = "target",
+    y = "Skin Thickness"
+  ) +
+  scale_fill_manual(values = c("blue", "green"), name = "target") +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    axis.title = element_text(face = "bold")
+  )
+
+skinthickness_pvalue = t.test(diabetes_patients$SkinThickness, diabetes_healthy$SkinThickness)$p.value
+
+```
+
+**Interpretation:**
+
+The median for both groups is around 25–30.Both groups have several outliers (indicated by red dots).There is some overlap in the distributions of the two groups, suggesting that the skin thickness alone may not strongly distinguish between women with diabetes and not .The p-value of `r toString(skinthickness_pvalue)` indicates that there is a statistically significant difference in skin thickness between the "Diabetes" and "Healthy" groups, assuming a typical significance level of 0.05.
+
+## Insulin Distribution by Response
+
+```{r}
+
+# Filter rows with valid Insulin values for plotting
+diabetes_clean <- diabetes %>%
+  dplyr::filter(!is.na(Insulin))
+
+# Use a violin plot to show the distribution of insulin levels
+diabetes_clean %>%
+  ggplot(aes(x = target, y = Insulin, fill = target)) + 
+  geom_violin(alpha = 0.7, trim = TRUE) +  # Violin plot with trimmed tails
+  theme_minimal(base_size = 16) + 
+  theme(
+    legend.position = "none",
+    strip.text = element_text(face = "bold", size = 14)
+  ) +
+  labs(
+    title = "Distribution of Insulin Levels by Target Group",
+    x = "Target Group",
+    y = "Insulin Levels (µU/mL)"
+  ) +
+  scale_fill_manual(values = c("Diabetes" = "#4A90E2", "healthy" = "#50E3C2"))
+
+# Perform a t-test to compare Insulin levels between the two groups
+insulin_pvalue <- t.test(
+  subset(diabetes_clean, target == "Diabetes")$Insulin,
+  subset(diabetes_clean, target == "healthy")$Insulin
+)$p.value
+
+
+
+```
+
+**Interpretation:** The "Diabetes" group (blue) shows a more spread-out distribution with a right skew, while the "Healthy" group (green) has a sharp peak near low insulin levels and tapers off quickly.
+The chart effectively conveys a difference in insulin distribution between the two groups, which might reflect underlying physiological differences, assuming the data is accurate.
+The p value `r toString(insulin_pvalue)` suggests very strong evidence against the null hypothesis, assuming the standard significance threshold (e.g., 0.05).
+This means that the observed differences in insulin levels between the "Diabetes" and "Healthy" groups are highly unlikely to have occurred due to random chance.
+
+## BMI Distribution by Response
+
+```{r}
+diabetes %>%
+  dplyr::filter(BMI != 0) %>%  # Remove rows where BMI is 0
+  ggplot(aes(x = BMI, fill = BMI)) + 
+  geom_histogram() +
+  theme(text = element_text(size = 16)) +
+  labs(title = "Frequency Histogram: BMI") +
+  xlab("BMI") +
+  ylab("Count")
+
+```
+
+**Interpretation:**
+
+Most BMI values ARE concentrated around 20–40, indicating a normal to overweight range.
+
+```{r}
+# First plot: Histogram with BMI values, removing 0 BMI
+diabetes %>%
+  dplyr::filter(BMI != 0) %>%  # Remove rows where BMI is 0
+  ggplot(aes(x = BMI, fill = target)) + 
+  geom_histogram(binwidth = 2) +
+  facet_wrap(~ target) + 
+  theme(text = element_text(size = 16)) +
+  labs(title = "Frequency Histogram: BMI vs Target") +
+  xlab("BMI") +
+  ylab("Count")
+
+# Second plot: Boxplot for BMI vs Target, removing 0 BMI
+diabetes %>%
+  dplyr::filter(BMI != 0) %>%  # Remove rows where BMI is 0
+  ggplot(aes(x = target, y = BMI, fill = target)) + 
+  geom_boxplot(alpha = 0.9) +
+  theme(text = element_text(size = 16)) +
+  labs(title = "BMI Distribution by Target") +
+  xlab("Target") +
+  ylab("BMI")
+
+# Perform t-test to compare BMI between healthy and diabetic patients
+BMI_pvalue = t.test(diabetes_healthy$BMI, diabetes_patients$BMI)$p.value
+
+
+```
+
+**Interpretation:**
+
+Both groups have overlapping BMI ranges, the median BMI for the diabetes group appears slightly higher, suggesting a potential association between higher BMI and diabetes.The BMI p-value of `r toString(BMI_pvalue)` is an extremely small value indicating that this result is highly statistically significant .
+
+## Diabetes Pedigree Function Distribution by Response
+
+```{r}
+# Remove 0 values and create a violin plot for Diabetes Pedigree Function
+diabetes %>%
+  dplyr::filter(DiabetesPedigreeFunction != 0) %>%  # Remove rows where DiabetesPedigreeFunction is 0
+  ggplot(aes(x = factor(target), y = DiabetesPedigreeFunction, fill = factor(target))) +
+  geom_violin(alpha = 0.7, trim = TRUE) +  # Violin plot for better distribution view
+  scale_fill_manual(values = c("blue", "green"), labels = c("Healthy", "Diabetes")) +
+  labs(
+    title = "Distribution of Diabetes Pedigree Function by Target",
+    x = "Target",
+    y = "Diabetes Pedigree Function",
+    fill = "Target"
+  ) +
+  facet_wrap(~target, labeller = labeller(target = c("0" = "Healthy", "1" = "Diabetes"))) +
+  theme_minimal(base_size = 16) +
+  theme(
+    legend.position = "none",  # Remove legend
+    strip.text = element_text(face = "bold", size = 14)
+  )
+
+DiabetesPedigreeFunction_pvalue <- t.test(diabetes_patients$DiabetesPedigreeFunction, diabetes_healthy$DiabetesPedigreeFunction)$p.value
+
+```
+
+**Interpretation:**
+
+individuals with diabetes (blue) tend to have higher Diabetes Pedigree Function values, indicating greater genetic predisposition compared to the healthy group (green).
+The healthy group has a concentrated distribution at lower values, while the diabetes group is more spread out with a right skew.
+There is some overlap at lower values, but the distinction becomes clearer as the function value increases.
+The p value `r toString(DiabetesPedigreeFunction_pvalue)` suggests that the difference between the diabetes and healthy groups is highly statistically significant and is unlikely to have occurred due to random chance.
+Therefore, it supports the conclusion that individuals with diabetes have a significantly different (likely higher) Diabetes Pedigree Function compared to healthy individuals.
+
+## Age Distribution
+
+```{r}
+# By Age
+diabetes %>%
+  ggplot( aes(x = Age)) + 
+    geom_histogram(binwidth =2)+
+  theme(text = element_text(size=16)) +
+    labs ( title = "Frequency Histogram: Age" )  +
+          xlab ("Age") +
+          ylab  ("count")
+
+```
+
+**Interpretation:**
+
+the majority of the patients is concentrated around younger ages (20–30), with a gradual decrease in frequency as age increases.
+
+## Age Distribution by Response
+
+```{r}
+# By Age and Target using histograms 
+diabetes %>%
+  ggplot( aes(x = Age, fill = target)) + 
+    geom_histogram(binwidth =2)+
+    facet_wrap(~ target, ncol=1) + 
+    theme(text = element_text(size=16)) +
+    labs ( title = "Frequency Histogram: Age vs Target" ) +
+          xlab ("Age") +
+          ylab ("count")
+
+  
+
+
+age_pvalue = t.test(diabetes_patients$Age, diabetes_healthy$Age)$p.value
+
+```
+
+**Interpretation:**
+
+Patients with diabetes are spread relatively evenly across ages, while healthy individuals are more concentrated in younger age groups, with a sharp decline in frequency as age increases.
+
+The age is statistical significant with a p-value of `r toString(age_pvalue)`.

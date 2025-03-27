@@ -1,0 +1,174 @@
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+```
+
+---
+title: "<h1 style='color:#2C3E50; font-size:36px; text-align:center;'>
+           Feature Selection for Diabetes Prediction: A Smart Approach </h1>"
+author: "<h4 style='text-align:center;'>Kawtar Zouhair</h4>"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output: 
+  html_document:
+    number_sections: yes
+    toc: yes
+    theme: cosmo
+    highlight: tango
+---
+
+# Introduction
+
+Feature selection is a critical step in the data preprocessing pipeline, as it helps identify the most relevant features that contribute to the predictive power of machine learning models. By selecting the most important features, we can reduce model complexity, improve performance, and prevent overfitting, ultimately leading to more accurate and efficient predictions.
+
+
+# Load libraries
+
+```{r}
+library(caret)
+library(MASS)
+library(leaps)
+library(ranger)  # Faster alternative to randomForest
+library(xgboost)
+library(pROC)
+library(doParallel)  # For parallel processing
+```
+
+# Enable parallel computing
+
+```{r}
+cl <- makeCluster(detectCores() - 1)  # Use all but one core
+registerDoParallel(cl)
+```
+# Load dataset
+
+```{r}
+diabetes_data <- read.csv("C:/Users/kawta/Desktop/Module/Data Science/Diabetes/subfolder/diabetes_dataset.csv")
+```
+# Define target and predictors
+
+```{r}
+target_var <- "Outcome"
+predictors <- setdiff(names(diabetes_data), target_var)
+```
+# Convert Outcome to factor
+
+```{r}
+diabetes_data[[target_var]] <- as.factor(diabetes_data[[target_var]])
+```
+# Split data into training (80%) and testing (20%)
+
+```{r}
+set.seed(123)
+trainIndex <- createDataPartition(diabetes_data[[target_var]], p = 0.8, list = FALSE)
+trainData <- diabetes_data[trainIndex, ]
+testData <- diabetes_data[-trainIndex, ]
+```
+# -----------------------------------
+# Optimized Recursive Feature Elimination (RFE)
+# -----------------------------------
+```{r}
+set.seed(123)
+rfe_control <- rfeControl(functions = rfFuncs, method = "cv", number = 5, allowParallel = TRUE)  # Reduced folds
+
+rfe_result <- rfe(trainData[, predictors], trainData[[target_var]], 
+                  sizes = c(5, 10, 15),  # Limiting feature sizes
+                  rfeControl = rfe_control)
+
+selected_features_rfe <- predictors(rfe_result)
+print("Optimized RFE Selected Features:")
+print(selected_features_rfe)
+```
+
+
+# -----------------------------------
+# Greedy Forward Selection
+# -----------------------------------
+```{r}
+forward_model <- regsubsets(as.formula(paste(target_var, "~ .")), data = trainData, 
+                            method = "forward", nvmax = min(15, length(predictors)))  # Limit max variables
+summary_forward <- summary(forward_model)
+best_model_forward <- which.min(summary_forward$bic)
+selected_features_forward <- names(coef(forward_model, best_model_forward))[-1]
+
+print("Optimized Forward Selection Features:")
+print(selected_features_forward)
+```
+
+
+# -----------------------------------
+# Backward Elimination
+# -----------------------------------
+```{r}
+full_model <- glm(as.formula(paste(target_var, "~ .")), data = trainData, family = binomial)
+backward_model <- stepAIC(full_model, direction = "backward", trace = FALSE)  # Suppress output for speed
+
+selected_features_backward <- names(coef(backward_model))[-1]
+print("Optimized Backward Elimination Features:")
+print(selected_features_backward)
+```
+
+
+# -----------------------------------
+# Optimized Model Training and Evaluation
+# -----------------------------------
+```{r}
+evaluate_model <- function(features, model_type) {
+  formula <- as.formula(paste(target_var, "~", paste(features, collapse = "+")))
+  
+  if (model_type == "Logistic Regression") {
+    model <- glm(formula, data = trainData, family = binomial)
+    preds <- predict(model, testData, type = "response")
+    preds_class <- ifelse(preds > 0.5, 1, 0)
+    
+  } else if (model_type == "Random Forest") {
+    model <- ranger(formula, data = trainData, probability = TRUE)  # Faster than randomForest
+    preds <- predict(model, testData)$predictions[, 2]
+    preds_class <- ifelse(preds > 0.5, 1, 0)
+    
+  } else if (model_type == "XGBoost") {
+    train_matrix <- model.matrix(formula, trainData)[,-1]
+    test_matrix <- model.matrix(formula, testData)[,-1]
+    
+    model <- xgboost(data = train_matrix, label = as.numeric(trainData[[target_var]]) - 1, 
+                      nrounds = 25,  # Reduced iterations
+                      objective = "binary:logistic", verbose = 0)
+    
+    preds <- predict(model, test_matrix)
+    preds_class <- ifelse(preds > 0.5, 1, 0)
+  }
+  
+  # Compute performance metrics
+
+  acc <- mean(preds_class == as.numeric(testData[[target_var]]) - 1)
+  auc <- roc(as.numeric(testData[[target_var]]) - 1, preds)$auc
+  return(list(Accuracy = acc, AUC = auc))
+}
+```
+
+
+# Evaluate models with different feature selection sets
+```{r}
+results <- list(
+  RFE_LogReg = evaluate_model(selected_features_rfe, "Logistic Regression"),
+  RFE_RF = evaluate_model(selected_features_rfe, "Random Forest"),
+  RFE_XGB = evaluate_model(selected_features_rfe, "XGBoost"),
+  Fwd_LogReg = evaluate_model(selected_features_forward, "Logistic Regression"),
+  Fwd_RF = evaluate_model(selected_features_forward, "Random Forest"),
+  Fwd_XGB = evaluate_model(selected_features_forward, "XGBoost"),
+  Bwd_LogReg = evaluate_model(selected_features_backward, "Logistic Regression"),
+  Bwd_RF = evaluate_model(selected_features_backward, "Random Forest"),
+  Bwd_XGB = evaluate_model(selected_features_backward, "XGBoost")
+)
+```
+
+
+# Print results
+```{r}
+print("Optimized Model Performance Comparison:")
+print(results)
+
+# Stop parallel processing
+stopCluster(cl)
+```
+
+
+
