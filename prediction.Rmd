@@ -1,0 +1,220 @@
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+
+```
+---
+title: "<h1 style='color: #2E86C1; text-align: center;'>Diabetes Prediction: Unveiling Insights with Machine Learning Models</h1>"
+author: "<h4 style='text-align:center;'>Kawtar Zouhair</h4>"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output: 
+  html_document:
+    number_sections: yes
+    toc: yes
+    theme: cosmo
+    highlight: tango
+---
+
+# Introduction
+
+ This notebook explores the use of machine learning models to predict diabetes based on a variety of clinical features, such as age, BMI, glucose levels, and family history.
+
+The dataset used in this analysis is derived from a comprehensive diabetes study, containing key variables that may influence the likelihood of diabetes. By applying data preprocessing techniques, feature engineering, and machine learning algorithms, we aim to build a predictive model that can assist in identifying individuals at risk.
+
+# Load Libraries
+
+```{r}
+library(ggplot2)
+library(randomForest)
+library(e1071)
+library(caret)
+library(dplyr)
+library(rpart)
+library(rpart.plot)
+library(pROC)
+library(class)
+library(RColorBrewer)
+
+myPalette <- brewer.pal(5, "YlGn")
+```
+
+
+# Load the dataset
+
+```{r}
+diabetes_data <- read.csv("C:/Users/kawta/Desktop/Module/Data Science/Diabetes/subfolder/diabetes_dataset.csv")
+
+# Ensure 'Outcome' is a factor
+diabetes_data$Outcome <- as.factor(diabetes_data$Outcome)
+# Check the structure of the dataset
+str(diabetes_data)
+```
+# Split Data into Train/Test
+```{r}
+set.seed(0)
+split <- createDataPartition(diabetes_data$Outcome, p = 0.7, list = FALSE)
+train_data <- diabetes_data[split, ]
+test_data <- diabetes_data[-split, ]
+```
+
+
+# Logistic Regression
+
+```{r}
+# Train Logistic Regression model
+log_model <- train(Outcome ~ ., data = train_data, method = "glm", family = "binomial")
+
+# Predict on the test set
+pred_log <- predict(log_model, test_data, type = "prob")[, 2]
+roc_log <- roc(test_data$Outcome, pred_log)
+auc_log <- auc(roc_log)
+
+# Plot ROC Curve
+plot(roc_log, col = "blue", main = paste("Logistic Regression ROC Curve (AUC =", round(auc_log, 2), ")"))
+abline(a = 0, b = 1, col = "red", lty = 2)
+
+```
+
+# Decision Tree Regression
+```{r}
+# Train Decision Tree model
+tree_model <- rpart(Outcome ~ ., data = train_data, method = "class")
+
+# Plot the Decision Tree
+rpart.plot(tree_model, type = 3, extra = 102, main = "Decision Tree")
+
+# Predict on the test set
+pred_tree <- predict(tree_model, test_data, type = "prob")[, 2]
+
+# Compute ROC curve and AUC
+roc_tree <- roc(test_data$Outcome, pred_tree)
+auc_tree <- auc(roc_tree)
+
+# Plot ROC Curve
+plot(roc_tree, col = "blue", main = paste("Decision Tree ROC Curve (AUC =", round(auc_tree, 2), ")"))
+abline(a = 0, b = 1, col = "red", lty = 2)
+
+```
+
+
+# Random Forest model
+
+```{r}
+# Train Random Forest model
+rf_model <- randomForest(Outcome ~ ., data = train_data, ntree = 100, probability = TRUE)
+
+# Print the Random Forest model to see the results
+print(rf_model)
+
+# Predict on the test set (Probabilities for each class)
+pred_rf <- predict(rf_model, test_data, type = "prob")[, 2]
+
+# Predict class labels for the test set (for evaluation purposes)
+pred_class_rf <- predict(rf_model, test_data)
+
+# Compute ROC curve and AUC
+roc_rf <- roc(test_data$Outcome, pred_rf)
+auc_rf <- auc(roc_rf)
+
+# Plot ROC Curve
+plot(roc_rf, col = "blue", main = paste("Random Forest ROC Curve (AUC =", round(auc_rf, 2), ")"))
+abline(a = 0, b = 1, col = "red", lty = 2)
+```
+
+# Support Vector Machine Regression
+
+```{r}
+# Train SVM model
+svm_model <- svm(Outcome ~ ., data = train_data, probability = TRUE)
+
+# Predict on the test set
+pred_svm <- predict(svm_model, test_data, probability = TRUE)
+pred_svm_prob <- attr(pred_svm, "probabilities")[, 2]
+roc_svm <- roc(test_data$Outcome, pred_svm_prob)
+auc_svm <- auc(roc_svm)
+
+# Plot ROC Curve
+plot(roc_svm, col = "blue", main = paste("SVM ROC Curve (AUC =", round(auc_svm, 2), ")"))
+abline(a = 0, b = 1, col = "red", lty = 2)
+```
+
+# K-Nearest Neighbors (KNN) Regression
+```{r}
+# Prepare data for KNN
+train_X <- train_data[, -which(names(train_data) == "Outcome")]
+test_X <- test_data[, -which(names(test_data) == "Outcome")]
+train_y <- train_data$Outcome
+
+# Choose k value and train KNN model
+k <- 5
+pred_knn <- knn(train_X, test_X, cl = train_y, k = k, prob = TRUE)
+pred_knn_prob <- attr(pred_knn, "prob")
+
+# ROC Curve
+roc_knn <- roc(test_data$Outcome, pred_knn_prob)
+auc_knn <- auc(roc_knn)
+
+# Plot ROC Curve
+plot(roc_knn, col = "blue", main = paste("KNN ROC Curve (AUC =", round(auc_knn, 2), ")"))
+abline(a = 0, b = 1, col = "red", lty = 2)
+```
+
+
+# Compare Models
+```{r}
+# Logistic Regression
+log_model <- train(Outcome ~ ., data = train_data, method = "glm", family = "binomial")
+pred_log <- predict(log_model, test_data)
+roc_log <- roc(test_data$Outcome, as.numeric(pred_log))
+auc_log <- auc(roc_log)
+
+# Decision Tree
+tree_model <- rpart(Outcome ~ ., data = train_data, method = "class")
+pred_tree <- predict(tree_model, test_data, type = "class")
+roc_tree <- roc(test_data$Outcome, as.numeric(pred_tree))
+auc_tree <- auc(roc_tree)
+
+# Random Forest
+rf_model <- randomForest(Outcome ~ ., data = train_data, ntree = 100)
+pred_rf <- predict(rf_model, test_data)
+roc_rf <- roc(test_data$Outcome, as.numeric(pred_rf))
+auc_rf <- auc(roc_rf)
+
+# Support Vector Machine
+svm_model <- svm(Outcome ~ ., data = train_data, probability = TRUE)
+pred_svm <- predict(svm_model, test_data, probability = TRUE)
+roc_svm <- roc(test_data$Outcome, attr(pred_svm, "probabilities")[, 2])
+auc_svm <- auc(roc_svm)
+
+# K-Nearest Neighbors
+train_X <- train_data[, -which(names(train_data) == "Outcome")]
+test_X <- test_data[, -which(names(test_data) == "Outcome")]
+train_y <- train_data$Outcome
+k <- 5
+pred_knn <- knn(train_X, test_X, cl = train_y, k = k)
+roc_knn <- roc(test_data$Outcome, as.numeric(pred_knn))
+auc_knn <- auc(roc_knn)
+
+# Compare AUCs
+results <- data.frame(
+  Model = c("Logistic Regression", "Decision Tree", "Random Forest", "SVM", "KNN"),
+  AUC = c(auc_log, auc_tree, auc_rf, auc_svm, auc_knn)
+)
+
+print(results)
+model_auc <- data.frame(
+  Model = c("Logistic Regression", "Decision Tree", "Random Forest", "SVM", "KNN"),
+  AUC = c(0.7208333, 0.6870833, 0.7045833, 0.8281667, 0.6783333)
+)
+ggplot(model_auc, aes(x = Model, y = AUC, fill = Model)) +
+  geom_bar(stat = "identity", show.legend = FALSE) +
+  geom_text(aes(label = round(AUC, 2)), vjust = -0.3, size = 5) +
+  theme_minimal() +
+  labs(title = "Comparison of AUC for Different Models",
+       x = "Model",
+       y = "AUC") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+
+

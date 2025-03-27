@@ -1,0 +1,254 @@
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+
+```
+---
+title: "<h1 style='color:#2C3E50; font-size:36px; text-align:center;'>
+           Clustering the Diabetes Dataset with K-Means </h1>"
+author: "<h4 style='text-align:center;'>Kawtar Zouhair</h4>"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output: 
+  html_document:
+    number_sections: yes
+    toc: yes
+    theme: cosmo
+    highlight: tango
+---
+
+
+# **Introduction**
+
+K-means is an unsupervised machine learning algorithm used to find groups of observations (clusters) that share similar characteristics. In this tutorial, we will use a [Diabetes Dataset](https://www.kaggle.com/akram24/diabetes-pca) to cluster different types of diabetes data. The dataset contains various health parameters related to diabetes.
+
+# **Loading Data** {.tabset .tabset-fade .tabset-pills}
+
+First, let's load the necessary libraries and read the data.
+
+
+```{r}
+# Load libraries
+library(tidyverse)
+library(corrplot)
+library(gridExtra)
+library(GGally)
+library(knitr)
+library(cluster)
+library(factoextra)
+```
+
+
+# Load the diabetes dataset
+```{r}
+diabetes_raw=read.csv("C:/Users/kawta/Desktop/Module/Data Science/Diabetes/subfolder/diabetes_dataset.csv")
+
+```
+
+# Cleaning and Prepping the Data
+
+```{r}
+# Load necessary libraries
+library(dplyr)
+
+# Assign the raw data to a new variable
+diabetes <- diabetes_raw
+
+# Outcome is a categorical variable with values 0 or 1, convert it to a factor
+diabetes$Outcome <- factor(diabetes$Outcome)
+
+# Spell out the Outcome flag (1 = Diabetes, 0 = healthy)
+diabetes$Outcome <- ifelse(diabetes$Outcome == "1", "Diabetes", "healthy")
+
+# Rename the 'Outcome' column to 'target'
+colnames(diabetes)[ncol(diabetes)] <- "target"
+
+# Entfernen der 0-Werte aus der SkinThickness-Spalte
+diabetes$SkinThickness[diabetes$SkinThickness == 0] <- NA
+
+# Create two subsets: diabetes patients and healthy individuals
+diabetes_patients <- subset(diabetes, target == "Diabetes")
+diabetes_healthy <- subset(diabetes, target == "healthy")
+
+# Ensure Insulin is numeric and replace 0 values with NA
+diabetes$Insulin <- as.numeric(diabetes$Insulin)
+diabetes$Insulin[diabetes$Insulin == 0] <- NA
+
+# Cleaning the Blood Pressure Data: Replace 0 values with NA
+diabetes$BloodPressure[diabetes$BloodPressure == 0] <- NA
+
+# Check the number of missing values in the Blood Pressure column
+sum(is.na(diabetes$BloodPressure))
+
+
+#  replacing NA values in BloodPressure with the median (as a simple imputation strategy):
+diabetes$BloodPressure <- ifelse(is.na(diabetes$BloodPressure), 
+                                  median(diabetes$BloodPressure, na.rm = TRUE), 
+                                  diabetes$BloodPressure)
+# Entfernen der 0-Werte aus den Spalten Glucose und BMI
+diabetes$Glucose[diabetes$Glucose == 0] <- NA
+diabetes$BMI[diabetes$BMI == 0] <- NA
+
+# Optional: Überprüfen der Anzahl der fehlenden Werte in Glucose und BMI
+sum(is.na(diabetes$Glucose))
+sum(is.na(diabetes$BMI))
+
+
+```
+# Show a preview of the data
+```{r}
+head(diabetes)
+```
+# Summary of the dataset
+```{r}
+summary(diabetes)
+```
+# Structure of the dataset
+```{r}
+str(diabetes)
+```
+# Histogram for each Attribute
+```{r}
+diabetes %>%
+  gather(Attributes, value, 1:8) %>%
+  ggplot(aes(x=value, fill=Attributes)) +
+  geom_histogram(colour="black", show.legend=FALSE) +
+  facet_wrap(~Attributes, scales="free_x") +
+  labs(x="Values", y="Frequency",
+       title="Diabetes Attributes - Histograms") +
+  theme_bw()
+```
+
+# Boxplot for each Attribute
+```{r}
+diabetes %>%
+  gather(Attributes, values, 1:8) %>%
+  ggplot(aes(x=reorder(Attributes, values, FUN=median), y=values, fill=Attributes)) +
+  geom_boxplot(show.legend=FALSE) +
+  labs(title="Diabetes Attributes - Boxplots") +
+  theme_bw() +
+  theme(axis.title.y=element_blank(),
+        axis.title.x=element_blank()) +
+  ylim(0, 35) +
+  coord_flip()
+```
+# Correlation matrix 
+```{r}
+corrplot(cor(diabetes[,1:8]), type="upper", method="ellipse", tl.cex=0.9)
+```
+# Normalization
+```{r}
+diabetesNorm <- as.data.frame(scale(diabetes[,1:8]))
+```
+# Show the difference before and after normalization
+```{r}
+p1 <- ggplot(diabetes, aes(x=Glucose, y=BloodPressure)) +
+  geom_point() +
+  labs(title="Original data") +
+  theme_bw()
+
+p2 <- ggplot(diabetesNorm, aes(x=Glucose, y=BloodPressure)) +
+  geom_point() +
+  labs(title="Normalized data") +
+  theme_bw()
+
+```
+# Subplot
+```{r}
+grid.arrange(p1, p2, ncol=2)
+```
+
+# Apply k-means with k=2
+```{r}
+# Replace NA values with the median for each specified column
+diabetes$SkinThickness[is.na(diabetes$SkinThickness)] <- median(diabetes$SkinThickness, na.rm = TRUE)
+diabetes$BMI[is.na(diabetes$BMI)] <- median(diabetes$BMI, na.rm = TRUE)
+diabetes$Glucose[is.na(diabetes$Glucose)] <- median(diabetes$Glucose, na.rm = TRUE)
+diabetes$Insulin[is.na(diabetes$Insulin)] <- median(diabetes$Insulin, na.rm = TRUE)
+diabetes$BloodPressure[is.na(diabetes$BloodPressure)] <- median(diabetes$BloodPressure, na.rm = TRUE)
+
+
+set.seed(1234)
+
+# Ensure the data is a numeric matrix before running k-means
+diabetes_k2 <- kmeans(as.data.frame(scale(diabetes[, 1:8])), centers = 2)
+
+```
+
+# View cluster centers
+```{r}
+diabetes_k2$centers
+```
+# Cluster assignments for each data point
+```{r}
+diabetes_k2$cluster
+```
+# Cluster sizes
+```{r}
+diabetes_k2$size
+```
+# Visualize the clusters
+```{r}
+table(diabetes_k2$cluster, diabetes$Outcome)
+bss <- numeric()
+wss <- numeric()
+```
+# Run k-means for different values of k
+```{r}
+set.seed(1234)
+
+for(i in 1:10){
+  bss[i] <- kmeans(diabetesNorm, centers=i)$betweenss
+  wss[i] <- kmeans(diabetesNorm, centers=i)$tot.withinss
+}
+```
+
+# Plot the between-cluster sum of squares vs. k
+```{r}
+p3 <- qplot(1:10, bss, geom=c("point", "line"), 
+            xlab="Number of clusters", ylab="Between-cluster sum of squares") +
+  scale_x_continuous(breaks=seq(0, 10, 1)) +
+  theme_bw()
+
+# Plot the total within-cluster sum of squares vs. k
+p4 <- qplot(1:10, wss, geom=c("point", "line"),
+            xlab="Number of clusters", ylab="Total within-cluster sum of squares") +
+  scale_x_continuous(breaks=seq(0, 10, 1)) +
+  theme_bw()
+```
+# Subplot
+```{r}
+grid.arrange(p3, p4, ncol=2)
+```
+
+# Apply k-means with k=3
+```{r}
+set.seed(1234)
+diabetes_k3 <- kmeans(diabetesNorm, centers=3)
+```
+# View cluster assignments and customer segment comparison
+```{r}
+table(diabetes$Outcome, diabetes_k3$cluster)
+```
+# Cluster centers for k=3
+```{r}
+diabetes_k3$centers
+```
+# Boxplots for each cluster
+```{r}
+diabetes %>%
+   mutate(k3_cluster = factor(diabetes_k3$cluster)) %>%
+   gather(key = "variable", value = "value", -Outcome, -k3_cluster) %>%
+   ggplot(aes(x=k3_cluster, y=value, colour=k3_cluster, groups=k3_cluster)) +
+   facet_wrap(~variable, scales="free_y") + 
+   geom_boxplot() + 
+   theme_bw()
+```
+# Silhouette plot
+```{r}
+sil <- silhouette(diabetes_k3$cluster, daisy(diabetesNorm))
+```
+
+# Visualize the silhouette plot
+```{r}
+fviz_silhouette(sil, label=FALSE, print.summary=FALSE)
+```
+
